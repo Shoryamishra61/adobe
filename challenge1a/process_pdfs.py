@@ -34,4 +34,4 @@ def extract(pdf_path,out_dir):
     result={"title":doc.metadata.get('title',pdf_path.stem),
             "outline":outline(doc,b),"tables":tables(pdf_path)}
     (out_dir/f"{pdf_path.stem}.json").write_text(json.dumps(result,indent=2,ensure_ascii=False))
-        doc.close()
+    doc.close()
