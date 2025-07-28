@@ -1,0 +1,7 @@
+PyMuPDF==1.24.7
+pdfplumber==0.11.1
+pandas==2.2.2
+sentence-transformers==3.0.1
+torch==2.3.1
+Flask==3.0.3
+nltk
