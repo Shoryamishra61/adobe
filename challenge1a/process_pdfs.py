@@ -30,8 +30,17 @@ def outline(doc,bsize):
     return heads
 
 def extract(pdf_path,out_dir):
-    doc=fitz.open(pdf_path); b=base_font(doc)
+    doc=fitz.open(pdf_path)
+    b=base_font(doc)
     result={"title":doc.metadata.get('title',pdf_path.stem),
             "outline":outline(doc,b),"tables":tables(pdf_path)}
     (out_dir/f"{pdf_path.stem}.json").write_text(json.dumps(result,indent=2,ensure_ascii=False))
-        doc.close()
+    doc.close()
+
+if __name__ == '__main__':
+    input_dir = Path("/app/input")
+    output_dir = Path("/app/output")
+    output_dir.mkdir(exist_ok=True)
+
+    for pdf_file in input_dir.glob("*.pdf"):
+        extract(pdf_file, output_dir)

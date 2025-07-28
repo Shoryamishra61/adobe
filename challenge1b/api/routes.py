@@ -95,12 +95,47 @@ def analyze():
         logger.error(f"Error in analyze endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
+@api_blueprint.route('/rank_collection/<collection_name>', methods=['POST'])
+def rank_collection_route(collection_name):
+    """Rank PDF documents in a specific collection based on relevance to a query defined in a collection JSON"""
+    try:
+        logger.info(f"Starting document ranking for collection: {collection_name}")
+
+        collection_path = Path(f"/app/Challenge_1b/{collection_name}")
+        if not collection_path.exists():
+            return jsonify({"error": f"Collection '{collection_name}' not found"}), 404
+
+        config_path = collection_path / 'challenge1b_input.json'
+        if not config_path.exists():
+            return jsonify({"error": f"challenge1b_input.json not found in collection '{collection_name}'"}), 404
+
+        pdfs_path = collection_path / 'PDFs'
+        if not pdfs_path.exists():
+            return jsonify({"error": f"PDFs directory not found in collection '{collection_name}'"}), 404
+
+        # Get top_k parameter from request or use default
+        top_k = request.args.get('top_k', 5, type=int)
+
+        # Perform ranking
+        logger.info(f"Ranking documents in collection '{collection_name}' with top_k={top_k}")
+        results = semantic_ranker.rank(config_path, pdfs_path, top_k=top_k)
+
+        logger.info(f"Ranking complete. Found {len(results)} results")
+        return jsonify({
+            "results": results,
+            "count": len(results)
+        })
+
+    except Exception as e:
+        logger.error(f"Error in rank_collection endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @api_blueprint.route('/rank', methods=['POST'])
 def rank_route():
     """Rank PDF documents based on relevance to a query defined in a collection JSON"""
     try:
         logger.info("Starting document ranking")
-        
+
         with TemporaryDirectory() as tmpdir:
             base_path = Path(tmpdir)
             pdfs_path = base_path / 'PDFs'
@@ -109,7 +144,7 @@ def rank_route():
             # Validate required files
             if 'config' not in request.files or 'pdfs' not in request.files:
                 return jsonify({"error": "Missing required files: 'config' and 'pdfs'"}), 400
-                
+
             config_file = request.files['config']
             zip_file = request.files['pdfs']
 
@@ -120,20 +155,20 @@ def rank_route():
             # Extract PDF files
             with zipfile.ZipFile(zip_file) as zf:
                 zf.extractall(pdfs_path)
-                
+
             # Get top_k parameter from request or use default
             top_k = request.args.get('top_k', 5, type=int)
-            
+
             # Perform ranking
             logger.info(f"Ranking documents with top_k={top_k}")
-            results = semantic_ranker.rank(config_path, base_path, top_k=top_k)
-            
+            results = semantic_ranker.rank(config_path, pdfs_path, top_k=top_k)
+
             logger.info(f"Ranking complete. Found {len(results)} results")
             return jsonify({
                 "results": results,
                 "count": len(results)
             })
-            
+
     except Exception as e:
         logger.error(f"Error in rank endpoint: {e}")
         return jsonify({"error": str(e)}), 500
