@@ -3,8 +3,28 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer, util
 import fitz
 import torch
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from collections import Counter
+
+# Download necessary NLTK data
+try:
+    stopwords.words('english')
+except LookupError:
+    nltk.download('stopwords')
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def extract_keywords(text):
+    stop_words = set(stopwords.words('english'))
+    words = word_tokenize(text.lower())
+    filtered_words = [word for word in words if word.isalnum() and word not in stop_words]
+    return [word for word, _ in Counter(filtered_words).most_common(10)]
 
 def rank(config_path, pdfs_path, top_k=5):
     with open(config_path) as f:
@@ -12,7 +32,16 @@ def rank(config_path, pdfs_path, top_k=5):
 
     persona = config.get("persona", {})
     job_to_be_done = config.get("job_to_be_done", {})
-    query = f"{persona.get('role', '')} {job_to_be_done.get('task', '')}"
+
+    # Extract keywords from persona and job description
+    persona_keywords = extract_keywords(persona.get('role', ''))
+    job_keywords = extract_keywords(job_to_be_done.get('task', ''))
+    query_keywords = list(set(persona_keywords + job_keywords))
+
+    if not query_keywords:
+        return []
+
+    query = " ".join(query_keywords)
     query_embedding = model.encode(query, convert_to_tensor=True)
 
     results = []
@@ -22,18 +51,23 @@ def rank(config_path, pdfs_path, top_k=5):
             text = page.get_text()
             if text:
                 passages = text.split("\n\n")
-                passage_embeddings = model.encode(passages, convert_to_tensor=True)
+                for passage in passages:
+                    if len(passage.strip()) > 50: # Only consider passages with some substance
+                        passage_embedding = model.encode(passage, convert_to_tensor=True)
+                        score = util.pytorch_cos_sim(query_embedding, passage_embedding)[0][0]
 
-                similarities = util.pytorch_cos_sim(query_embedding, passage_embeddings)[0]
+                        # Add a bonus for keyword matches
+                        passage_keywords = extract_keywords(passage)
+                        keyword_bonus = len(set(query_keywords) & set(passage_keywords)) * 0.1
+                        final_score = float(score) + keyword_bonus
 
-                for i, score in enumerate(similarities):
-                    results.append({
-                        "document": pdf_path.name,
-                        "section_title": "Placeholder Title",
-                        "importance_rank": float(score),
-                        "page_number": pno,
-                        "refined_text": passages[i]
-                    })
+                        results.append({
+                            "document": pdf_path.name,
+                            "section_title": " ".join(passage.split()[:10]) + "...", # Use first 10 words as title
+                            "importance_rank": final_score,
+                            "page_number": pno,
+                            "refined_text": passage
+                        })
         doc.close()
 
     results.sort(key=lambda x: x["importance_rank"], reverse=True)
